@@ -39,7 +39,7 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
         (1.0 / delta) as u32
     };
 
-    let index_buffer = [
+    let vertex_buffer = [
         Vec3::new(0.0, 1.0, 0.0),
         Vec3::new(-0.5, 0.0, -0.5),
         Vec3::new(-0.5, 0.0, 0.5),
@@ -47,7 +47,7 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
         Vec3::new(0.5, 0.0, -0.5),
     ];
 
-    let vertex_buffer = [
+    let index_buffer = [
         (0, 1, 2, Bgr565::RED),
         (0, 2, 3, Bgr565::GREEN),
         (0, 3, 4, Bgr565::BLUE),
@@ -73,10 +73,10 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     let scale = Vec3::new(160.0, 120.0, 1.0);
     let offset = Vec3::new(160.0, 120.0, 0.0);
 
-    for v in &vertex_buffer {
-        let a = mvp.project_point3(index_buffer[v.0]);
-        let b = mvp.project_point3(index_buffer[v.1]);
-        let c = mvp.project_point3(index_buffer[v.2]);
+    for v in &index_buffer {
+        let a = mvp.project_point3(vertex_buffer[v.0]);
+        let b = mvp.project_point3(vertex_buffer[v.1]);
+        let c = mvp.project_point3(vertex_buffer[v.2]);
         let a_ss = a * scale + offset;
         let b_ss = b * scale + offset;
         let c_ss = c * scale + offset;
