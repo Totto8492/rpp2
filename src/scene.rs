@@ -9,6 +9,7 @@ use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::primitives::Triangle;
 use embedded_graphics::text::Text;
 use glam::{Mat4, Vec3};
+use num_traits::cast;
 
 #[derive(Debug)]
 struct RenderQueue {
@@ -57,11 +58,7 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     ];
 
     let model = Mat4::from_rotation_x(elapsed) * Mat4::from_rotation_y(elapsed * 3.0);
-    let view = Mat4::look_at_rh(
-        Vec3::new(0.0, 3.0, -5.0),
-        Vec3::new(0.0, 0.5, 0.0),
-        Vec3::NEG_Y,
-    );
+    let view = Mat4::look_at_rh(Vec3::new(0.0, 3.0, -5.0), Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
     let projection = Mat4::perspective_rh(
         PI / (libm::sinf(elapsed * 5.0).abs() * 1.2 + 5.0),
         4.0 / 3.0,
@@ -70,35 +67,18 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     );
     let mvp = projection * view * model;
 
-    let scale = Vec3::new(160.0, 120.0, 1.0);
-    let offset = Vec3::new(160.0, 120.0, 0.0);
-
     for v in &index_buffer {
         let a = mvp.project_point3(vertex_buffer[v.0]);
         let b = mvp.project_point3(vertex_buffer[v.1]);
         let c = mvp.project_point3(vertex_buffer[v.2]);
-        let a_ss = a * scale + offset;
-        let b_ss = b * scale + offset;
-        let c_ss = c * scale + offset;
+        let color = v.3;
 
-        if !cull(a, b, c) {
-            state
-                .queue
-                .push(RenderQueue {
-                    polygon: (
-                        Point::new(a_ss.x as i32, a_ss.y as i32),
-                        Point::new(b_ss.x as i32, b_ss.y as i32),
-                        Point::new(c_ss.x as i32, c_ss.y as i32),
-                    ),
-                    color: v.3,
-                })
-                .unwrap();
-        }
+        let Some(polygon) = make_polygon(a, b, c) else {
+            continue;
+        };
+
+        state.queue.push(RenderQueue { polygon, color }).unwrap();
     }
-}
-
-fn cull(a: Vec3, b: Vec3, c: Vec3) -> bool {
-    (b - a).cross(c - a).z < 0.0
 }
 
 pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
@@ -128,4 +108,31 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
     }
 
     Ok(())
+}
+
+fn make_polygon(a: Vec3, b: Vec3, c: Vec3) -> Option<(Point, Point, Point)> {
+    if (b - a).cross(c - a).z < 0.0 {
+        return None;
+    }
+
+    if a.z < 0.0 || b.z < 0.0 || c.z < 0.0 {
+        return None;
+    }
+
+    if a.z > 1.0 || b.z > 1.0 || c.z > 1.0 {
+        return None;
+    }
+
+    let scale = Vec3::new(160.0, -120.0, 1.0);
+    let offset = Vec3::new(160.0, 120.0, 0.0);
+
+    let a_ss = a * scale + offset;
+    let b_ss = b * scale + offset;
+    let c_ss = c * scale + offset;
+
+    Some((
+        Point::new(cast(a_ss.x)?, cast(a_ss.y)?),
+        Point::new(cast(b_ss.x)?, cast(b_ss.y)?),
+        Point::new(cast(c_ss.x)?, cast(c_ss.y)?),
+    ))
 }
