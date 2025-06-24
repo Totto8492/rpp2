@@ -162,7 +162,7 @@ async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, F
     let start_time = Instant::now();
     let mut half_frames = 0;
     let mut last_time = 0.0;
-    let mut state = RenderState::new();
+    let mut state = RenderState::default();
     loop {
         if half_frames % 2 == 0 {
             let elapsed = (start_time.elapsed().as_micros() as f64 / 1_000_000.0) as f32;

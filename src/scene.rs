@@ -1,4 +1,5 @@
 use core::f32::consts::PI;
+use core::fmt::Write;
 
 use embedded_graphics::Drawable;
 use embedded_graphics::draw_target::DrawTarget;
@@ -7,7 +8,7 @@ use embedded_graphics::pixelcolor::Bgr565;
 use embedded_graphics::prelude::{Point, Primitive, RgbColor, WebColors};
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::primitives::Triangle;
-use embedded_graphics::text::Text;
+use embedded_graphics::text::{Baseline, Text};
 use glam::{Mat4, Vec3};
 use num_traits::cast;
 
@@ -17,22 +18,18 @@ struct RenderQueue {
     color: Bgr565,
 }
 
+#[derive(Default)]
 pub(crate) struct RenderState {
     fps: u32,
+    polygon_count: u32,
+    culling_count: u32,
     queue: heapless::Vec<RenderQueue, 16>,
-}
-
-impl RenderState {
-    pub(crate) fn new() -> Self {
-        Self {
-            fps: 0,
-            queue: heapless::Vec::new(),
-        }
-    }
 }
 
 pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     state.queue.clear();
+    state.polygon_count = 0;
+    state.culling_count = 0;
 
     state.fps = if delta < 0.001 {
         1000
@@ -68,12 +65,14 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     let mvp = projection * view * model;
 
     for v in &index_buffer {
+        state.polygon_count += 1;
         let a = mvp.project_point3(vertex_buffer[v.0]);
         let b = mvp.project_point3(vertex_buffer[v.1]);
         let c = mvp.project_point3(vertex_buffer[v.2]);
         let color = v.3;
 
         let Some(polygon) = make_polygon(a, b, c) else {
+            state.culling_count += 1;
             continue;
         };
 
@@ -88,18 +87,20 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
     framebuffer.clear(Bgr565::BLACK)?;
 
     let mut fps = heapless::String::<16>::new();
-    core::fmt::write(&mut fps, format_args!("FPS: {}", state.fps)).unwrap();
+    write!(&mut fps, "FPS: {}", state.fps).unwrap();
     let text_style = MonoTextStyle::new(
         &embedded_graphics::mono_font::ascii::FONT_10X20,
-        Bgr565::BLUE,
+        Bgr565::CSS_AQUAMARINE,
     );
-    let fps_label = Text::with_baseline(
-        &fps,
-        Point::zero(),
-        text_style,
-        embedded_graphics::text::Baseline::Top,
-    );
-    fps_label.draw(framebuffer)?;
+    render_text(framebuffer, &fps, text_style, Point::zero())?;
+
+    let mut polys = heapless::String::<16>::new();
+    write!(&mut polys, "Polys: {}", state.polygon_count).unwrap();
+    render_text(framebuffer, &polys, text_style, Point::new(0, 20))?;
+
+    let mut culls = heapless::String::<16>::new();
+    write!(&mut culls, "Culls: {}", state.culling_count).unwrap();
+    render_text(framebuffer, &culls, text_style, Point::new(0, 40))?;
 
     for queue in &state.queue {
         let poly = Triangle::new(queue.polygon.0, queue.polygon.1, queue.polygon.2)
@@ -135,4 +136,15 @@ fn make_polygon(a: Vec3, b: Vec3, c: Vec3) -> Option<(Point, Point, Point)> {
         Point::new(cast(b_ss.x)?, cast(b_ss.y)?),
         Point::new(cast(c_ss.x)?, cast(c_ss.y)?),
     ))
+}
+
+fn render_text<D: DrawTarget<Color = Bgr565>>(
+    framebuffer: &mut D,
+    text: &str,
+    style: MonoTextStyle<'_, Bgr565>,
+    pos: Point,
+) -> Result<(), D::Error> {
+    let text_label = Text::with_baseline(text, pos, style, Baseline::Top);
+    text_label.draw(framebuffer)?;
+    Ok(())
 }
