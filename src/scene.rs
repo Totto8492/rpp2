@@ -86,6 +86,12 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
 ) -> Result<(), D::Error> {
     framebuffer.clear(Bgr565::BLACK)?;
 
+    for queue in &state.queue {
+        let poly = Triangle::new(queue.polygon.0, queue.polygon.1, queue.polygon.2)
+            .into_styled(PrimitiveStyle::with_fill(queue.color));
+        poly.draw(framebuffer)?;
+    }
+
     let mut fps = heapless::String::<16>::new();
     write!(&mut fps, "FPS: {}", state.fps).unwrap();
     let text_style = MonoTextStyle::new(
@@ -101,12 +107,6 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
     let mut culls = heapless::String::<16>::new();
     write!(&mut culls, "Culls: {}", state.culling_count).unwrap();
     render_text(framebuffer, &culls, text_style, Point::new(0, 40))?;
-
-    for queue in &state.queue {
-        let poly = Triangle::new(queue.polygon.0, queue.polygon.1, queue.polygon.2)
-            .into_styled(PrimitiveStyle::with_fill(queue.color));
-        poly.draw(framebuffer)?;
-    }
 
     Ok(())
 }
