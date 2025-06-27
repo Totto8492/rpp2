@@ -76,7 +76,7 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
             continue;
         };
 
-        state.queue.push(RenderQueue { polygon, color }).unwrap();
+        state.queue.push(RenderQueue { polygon, color }).expect("Render queue is full");
     }
 }
 

@@ -27,7 +27,7 @@ static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
-type FrameBufferType =
+type Framebuffer320x120 =
     Framebuffer<Bgr565, RawU16, BigEndian, 320, 120, { buffer_size::<Bgr565>(320, 120) }>;
 
 #[cortex_m_rt::entry]
@@ -62,10 +62,10 @@ fn main() -> ! {
     spi_config.frequency = 75_000_000;
     let spi = Spi::new_txonly(p.SPI0, p.PIN_6, p.PIN_3, p.DMA_CH0, spi_config);
 
-    static BUF: StaticCell<[FrameBufferType; 2]> = StaticCell::new();
-    let buf = BUF.init([FrameBufferType::new(), FrameBufferType::new()]);
+    static BUF: StaticCell<[Framebuffer320x120; 2]> = StaticCell::new();
+    let buf = BUF.init([Framebuffer320x120::new(), Framebuffer320x120::new()]);
 
-    static CHANNEL: StaticCell<zerocopy_channel::Channel<'_, NoopRawMutex, FrameBufferType>> =
+    static CHANNEL: StaticCell<zerocopy_channel::Channel<'_, NoopRawMutex, Framebuffer320x120>> =
         StaticCell::new();
     let channel = CHANNEL.init(zerocopy_channel::Channel::new(buf));
 
@@ -130,7 +130,7 @@ async fn init_display(
 
 #[embassy_executor::task]
 async fn display_task(
-    mut receiver: zerocopy_channel::Receiver<'static, NoopRawMutex, FrameBufferType>,
+    mut receiver: zerocopy_channel::Receiver<'static, NoopRawMutex, Framebuffer320x120>,
     mut reset: Output<'static>,
     mut dc: Output<'static>,
     mut spi: Spi<'static, SPI0, spi::Async>,
@@ -158,7 +158,7 @@ async fn display_task(
 }
 
 #[embassy_executor::task]
-async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, FrameBufferType>) {
+async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, Framebuffer320x120>) {
     let start_time = Instant::now();
     let mut half_frames = 0;
     let mut last_time = 0.0;
