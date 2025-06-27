@@ -76,7 +76,10 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
             continue;
         };
 
-        state.queue.push(RenderQueue { polygon, color }).expect("Render queue is full");
+        state
+            .queue
+            .push(RenderQueue { polygon, color })
+            .expect("Render queue is full");
     }
 }
 
@@ -97,9 +100,27 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
         Bgr565::CSS_AQUAMARINE,
     );
 
-    draw_debug_text(framebuffer, "FPS", state.fps, 0, text_style)?;
-    draw_debug_text(framebuffer, "Polys", state.polygon_count, 20, text_style)?;
-    draw_debug_text(framebuffer, "Culls", state.culling_count, 40, text_style)?;
+    render_text(
+        framebuffer,
+        "FPS",
+        Some(state.fps),
+        text_style,
+        Point::new(0, 0),
+    )?;
+    render_text(
+        framebuffer,
+        "Polys",
+        Some(state.polygon_count),
+        text_style,
+        Point::new(0, 20),
+    )?;
+    render_text(
+        framebuffer,
+        "Culls",
+        Some(state.culling_count),
+        text_style,
+        Point::new(0, 40),
+    )?;
 
     Ok(())
 }
@@ -133,23 +154,18 @@ fn make_polygon(a: Vec3, b: Vec3, c: Vec3) -> Option<(Point, Point, Point)> {
 
 fn render_text<D: DrawTarget<Color = Bgr565>>(
     framebuffer: &mut D,
-    text: &str,
+    label: &str,
+    value: Option<u32>,
     style: MonoTextStyle<'_, Bgr565>,
     pos: Point,
 ) -> Result<(), D::Error> {
-    let text_label = Text::with_baseline(text, pos, style, Baseline::Top);
+    let mut s = heapless::String::<16>::new();
+    if let Some(v) = value {
+        write!(&mut s, "{label}: {v}").unwrap();
+    } else {
+        write!(&mut s, "{label}").unwrap();
+    }
+    let text_label = Text::with_baseline(&s, pos, style, Baseline::Top);
     text_label.draw(framebuffer)?;
     Ok(())
-}
-
-fn draw_debug_text<D: DrawTarget<Color = Bgr565>>(
-    framebuffer: &mut D,
-    label: &str,
-    value: u32,
-    y_offset: i32,
-    style: MonoTextStyle<'_, Bgr565>,
-) -> Result<(), D::Error> {
-    let mut s = heapless::String::<16>::new();
-    write!(&mut s, "{}: {}", label, value).unwrap();
-    render_text(framebuffer, &s, style, Point::new(0, y_offset))
 }
