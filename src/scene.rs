@@ -92,21 +92,14 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
         poly.draw(framebuffer)?;
     }
 
-    let mut fps = heapless::String::<16>::new();
-    write!(&mut fps, "FPS: {}", state.fps).unwrap();
     let text_style = MonoTextStyle::new(
         &embedded_graphics::mono_font::ascii::FONT_10X20,
         Bgr565::CSS_AQUAMARINE,
     );
-    render_text(framebuffer, &fps, text_style, Point::zero())?;
 
-    let mut polys = heapless::String::<16>::new();
-    write!(&mut polys, "Polys: {}", state.polygon_count).unwrap();
-    render_text(framebuffer, &polys, text_style, Point::new(0, 20))?;
-
-    let mut culls = heapless::String::<16>::new();
-    write!(&mut culls, "Culls: {}", state.culling_count).unwrap();
-    render_text(framebuffer, &culls, text_style, Point::new(0, 40))?;
+    draw_debug_text(framebuffer, "FPS", state.fps, 0, text_style)?;
+    draw_debug_text(framebuffer, "Polys", state.polygon_count, 20, text_style)?;
+    draw_debug_text(framebuffer, "Culls", state.culling_count, 40, text_style)?;
 
     Ok(())
 }
@@ -147,4 +140,16 @@ fn render_text<D: DrawTarget<Color = Bgr565>>(
     let text_label = Text::with_baseline(text, pos, style, Baseline::Top);
     text_label.draw(framebuffer)?;
     Ok(())
+}
+
+fn draw_debug_text<D: DrawTarget<Color = Bgr565>>(
+    framebuffer: &mut D,
+    label: &str,
+    value: u32,
+    y_offset: i32,
+    style: MonoTextStyle<'_, Bgr565>,
+) -> Result<(), D::Error> {
+    let mut s = heapless::String::<16>::new();
+    write!(&mut s, "{}: {}", label, value).unwrap();
+    render_text(framebuffer, &s, style, Point::new(0, y_offset))
 }

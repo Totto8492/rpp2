@@ -88,42 +88,30 @@ async fn init_display(
     reset.set_high();
     Timer::after_millis(120).await;
 
-    dc.set_low();
-    spi.write(&[0x01]).await?;
-    Timer::after_millis(5).await;
+    // Display initialization commands
+    // (command, data, delay_ms)
+    let commands: &[(u8, Option<&[u8]>, u64)] = &[
+        (0x01, None, 5), // Software Reset
+        (0xCB, Some(&[0x39, 0x2C, 0x00, 0b0011_0101, 0b0000_0000]), 0), // Power Control A
+        (0x36, Some(&[0b0011_0100]), 0), // Memory Access Control
+        (0x3A, Some(&[0b0101_0101]), 0), // Pixel Format Set
+        (0x2A, Some(&[0x00, 0x00, 0x01, 0x3F]), 0), // Column Address Set
+        (0x2B, Some(&[0x00, 0x00, 0x00, 0xEF]), 0), // Page Address Set
+        (0x11, None, 120), // Sleep Out
+        (0x29, None, 0), // Display ON
+    ];
 
-    dc.set_low();
-    spi.write(&[0xCB]).await?;
-    dc.set_high();
-    spi.write(&[0x39, 0x2C, 0x00, 0b0011_0101, 0b0000_0000])
-        .await?;
-
-    dc.set_low();
-    spi.write(&[0x36]).await?;
-    dc.set_high();
-    spi.write(&[0b0011_0100]).await?;
-
-    dc.set_low();
-    spi.write(&[0x3A]).await?;
-    dc.set_high();
-    spi.write(&[0b0101_0101]).await?;
-
-    dc.set_low();
-    spi.write(&[0x2A]).await?;
-    dc.set_high();
-    spi.write(&[0x00, 0x00, 0x01, 0x3F]).await?;
-
-    dc.set_low();
-    spi.write(&[0x2B]).await?;
-    dc.set_high();
-    spi.write(&[0x00, 0x00, 0x00, 0xEF]).await?;
-
-    dc.set_low();
-    spi.write(&[0x11]).await?;
-    Timer::after_millis(120).await;
-
-    dc.set_low();
-    spi.write(&[0x29]).await?;
+    for (cmd, data, delay) in commands {
+        dc.set_low();
+        spi.write(&[*cmd]).await?;
+        if let Some(d) = data {
+            dc.set_high();
+            spi.write(d).await?;
+        }
+        if *delay > 0 {
+            Timer::after_millis(*delay).await;
+        }
+    }
 
     Ok(())
 }
