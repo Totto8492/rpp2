@@ -12,6 +12,11 @@ use embedded_graphics::text::{Baseline, Text};
 use glam::{Mat4, Vec3};
 use num_traits::cast;
 
+pub(crate) struct Mesh {
+    pub(crate) vertex_buffer: &'static [Vec3],
+    pub(crate) index_buffer: &'static [(usize, usize, usize, Bgr565)],
+}
+
 #[derive(Debug)]
 struct RenderQueue {
     polygon: (Point, Point, Point),
@@ -37,22 +42,23 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
         (1.0 / delta) as u32
     };
 
-    let vertex_buffer = [
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(-0.5, 0.0, -0.5),
-        Vec3::new(-0.5, 0.0, 0.5),
-        Vec3::new(0.5, 0.0, 0.5),
-        Vec3::new(0.5, 0.0, -0.5),
-    ];
-
-    let index_buffer = [
-        (0, 1, 2, Bgr565::RED),
-        (0, 2, 3, Bgr565::GREEN),
-        (0, 3, 4, Bgr565::BLUE),
-        (0, 4, 1, Bgr565::CSS_GRAY),
-        (4, 2, 1, Bgr565::CSS_AQUA),
-        (4, 3, 2, Bgr565::CSS_AQUA),
-    ];
+    const PYRAMID: Mesh = Mesh {
+        vertex_buffer: &[
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(-0.5, 0.0, -0.5),
+            Vec3::new(-0.5, 0.0, 0.5),
+            Vec3::new(0.5, 0.0, 0.5),
+            Vec3::new(0.5, 0.0, -0.5),
+        ],
+        index_buffer: &[
+            (0, 1, 2, Bgr565::RED),
+            (0, 2, 3, Bgr565::GREEN),
+            (0, 3, 4, Bgr565::BLUE),
+            (0, 4, 1, Bgr565::CSS_GRAY),
+            (4, 2, 1, Bgr565::CSS_AQUA),
+            (4, 3, 2, Bgr565::CSS_AQUA),
+        ],
+    };
 
     let model = Mat4::from_rotation_x(elapsed) * Mat4::from_rotation_y(elapsed * 3.0);
     let view = Mat4::look_at_rh(Vec3::new(0.0, 3.0, -5.0), Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
@@ -64,23 +70,7 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     );
     let mvp = projection * view * model;
 
-    for v in &index_buffer {
-        state.polygon_count += 1;
-        let a = mvp.project_point3(vertex_buffer[v.0]);
-        let b = mvp.project_point3(vertex_buffer[v.1]);
-        let c = mvp.project_point3(vertex_buffer[v.2]);
-        let color = v.3;
-
-        let Some(polygon) = make_polygon(a, b, c) else {
-            state.culling_count += 1;
-            continue;
-        };
-
-        state
-            .queue
-            .push(RenderQueue { polygon, color })
-            .expect("Render queue is full");
-    }
+    queue_mesh(&PYRAMID, &mvp, state);
 }
 
 pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
@@ -168,4 +158,24 @@ fn render_text<D: DrawTarget<Color = Bgr565>>(
     let text_label = Text::with_baseline(&s, pos, style, Baseline::Top);
     text_label.draw(framebuffer)?;
     Ok(())
+}
+
+fn queue_mesh(mesh: &Mesh, mvp: &Mat4, state: &mut RenderState) {
+    for v in mesh.index_buffer {
+        state.polygon_count += 1;
+        let a = mvp.project_point3(mesh.vertex_buffer[v.0]);
+        let b = mvp.project_point3(mesh.vertex_buffer[v.1]);
+        let c = mvp.project_point3(mesh.vertex_buffer[v.2]);
+        let color = v.3;
+
+        let Some(polygon) = make_polygon(a, b, c) else {
+            state.culling_count += 1;
+            continue;
+        };
+
+        state
+            .queue
+            .push(RenderQueue { polygon, color })
+            .expect("Render queue is full");
+    }
 }
