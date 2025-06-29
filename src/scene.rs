@@ -51,16 +51,48 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
             Vec3::new(0.5, 0.0, -0.5),
         ],
         index_buffer: &[
-            (0, 1, 2, Bgr565::RED),
-            (0, 2, 3, Bgr565::GREEN),
-            (0, 3, 4, Bgr565::BLUE),
-            (0, 4, 1, Bgr565::CSS_GRAY),
-            (4, 2, 1, Bgr565::CSS_AQUA),
-            (4, 3, 2, Bgr565::CSS_AQUA),
+            (2, 1, 0, Bgr565::RED),
+            (3, 2, 0, Bgr565::GREEN),
+            (4, 3, 0, Bgr565::BLUE),
+            (1, 4, 0, Bgr565::CSS_GRAY),
+            (1, 2, 4, Bgr565::CSS_AQUA),
+            (2, 3, 4, Bgr565::CSS_AQUA),
         ],
     };
 
-    let model = Mat4::from_rotation_x(elapsed) * Mat4::from_rotation_y(elapsed * 3.0);
+    const CUBE: Mesh = Mesh {
+        vertex_buffer: &[
+            Vec3::new(-0.5, -0.5, -0.5), // 0
+            Vec3::new(0.5, -0.5, -0.5),  // 1
+            Vec3::new(0.5, 0.5, -0.5),   // 2
+            Vec3::new(-0.5, 0.5, -0.5),  // 3
+            Vec3::new(-0.5, -0.5, 0.5),  // 4
+            Vec3::new(0.5, -0.5, 0.5),   // 5
+            Vec3::new(0.5, 0.5, 0.5),    // 6
+            Vec3::new(-0.5, 0.5, 0.5),   // 7
+        ],
+        index_buffer: &[
+            // Front face (Z-)
+            (0, 1, 2, Bgr565::RED),
+            (0, 2, 3, Bgr565::RED),
+            // Back face (Z+)
+            (4, 7, 6, Bgr565::BLUE),
+            (4, 6, 5, Bgr565::BLUE),
+            // Right face (X+)
+            (1, 5, 6, Bgr565::GREEN),
+            (1, 6, 2, Bgr565::GREEN),
+            // Left face (X-)
+            (4, 0, 3, Bgr565::YELLOW),
+            (4, 3, 7, Bgr565::YELLOW),
+            // Top face (Y+)
+            (3, 2, 6, Bgr565::CYAN),
+            (3, 6, 7, Bgr565::CYAN),
+            // Bottom face (Y-)
+            (4, 5, 1, Bgr565::MAGENTA),
+            (4, 1, 0, Bgr565::MAGENTA),
+        ],
+    };
+
     let view = Mat4::look_at_rh(Vec3::new(0.0, 3.0, -5.0), Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
     let projection = Mat4::perspective_rh(
         PI / (libm::sinf(elapsed * 5.0).abs() * 1.2 + 5.0),
@@ -68,9 +100,20 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
         0.1,
         100.0,
     );
-    let mvp = projection * view * model;
 
-    queue_mesh(&PYRAMID, &mvp, state);
+    // PYRAMID
+    let model_pyramid = Mat4::from_translation(Vec3::new(-1.0, 0.0, 0.0))
+        * Mat4::from_rotation_x(elapsed)
+        * Mat4::from_rotation_y(elapsed * 3.0);
+    let mvp_pyramid = projection * view * model_pyramid;
+    queue_mesh(&PYRAMID, &mvp_pyramid, state);
+
+    // CUBE
+    let model_cube = Mat4::from_translation(Vec3::new(1.0, 0.0, 0.0))
+        * Mat4::from_rotation_y(elapsed * 2.0)
+        * Mat4::from_rotation_z(elapsed * 0.5);
+    let mvp_cube = projection * view * model_cube;
+    queue_mesh(&CUBE, &mvp_cube, state);
 }
 
 pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
@@ -116,7 +159,7 @@ pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
 }
 
 fn make_polygon(a: Vec3, b: Vec3, c: Vec3) -> Option<(Point, Point, Point)> {
-    if (b - a).cross(c - a).z < 0.0 {
+    if (b - a).cross(c - a).z > 0.0 {
         return None;
     }
 
