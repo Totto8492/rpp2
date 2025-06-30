@@ -7,8 +7,10 @@ use embassy_rp::clocks::{self, ClockConfig, CoreVoltage};
 use embassy_rp::config::Config;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::peripherals::SPI0;
+use embassy_rp::pac::dma::vals::TreqSel;
+use embassy_rp::peripherals::{DMA_CH1, SPI0};
 use embassy_rp::spi::{self, Phase, Polarity, Spi};
+use embassy_rp::{Peri, dma};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::zerocopy_channel;
 use embassy_time::{Instant, Timer};
@@ -73,7 +75,7 @@ fn main() -> ! {
 
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        spawner.must_spawn(draw_task(sender));
+        spawner.must_spawn(draw_task(sender, p.DMA_CH1));
         spawner.must_spawn(display_task(receiver, reset, dc, spi));
     });
 }
@@ -91,14 +93,14 @@ async fn init_display(
     // Display initialization commands
     // (command, data, delay_ms)
     let commands: &[(u8, Option<&[u8]>, u64)] = &[
-        (0x01, None, 5), // Software Reset
+        (0x01, None, 5),                                                // Software Reset
         (0xCB, Some(&[0x39, 0x2C, 0x00, 0b0011_0101, 0b0000_0000]), 0), // Power Control A
-        (0x36, Some(&[0b0011_0100]), 0), // Memory Access Control
-        (0x3A, Some(&[0b0101_0101]), 0), // Pixel Format Set
-        (0x2A, Some(&[0x00, 0x00, 0x01, 0x3F]), 0), // Column Address Set
-        (0x2B, Some(&[0x00, 0x00, 0x00, 0xEF]), 0), // Page Address Set
-        (0x11, None, 120), // Sleep Out
-        (0x29, None, 0), // Display ON
+        (0x36, Some(&[0b0011_0100]), 0),                                // Memory Access Control
+        (0x3A, Some(&[0b0101_0101]), 0),                                // Pixel Format Set
+        (0x2A, Some(&[0x00, 0x00, 0x01, 0x3F]), 0),                     // Column Address Set
+        (0x2B, Some(&[0x00, 0x00, 0x00, 0xEF]), 0),                     // Page Address Set
+        (0x11, None, 120),                                              // Sleep Out
+        (0x29, None, 0),                                                // Display ON
     ];
 
     for (cmd, data, delay) in commands {
@@ -144,7 +146,10 @@ async fn display_task(
 }
 
 #[embassy_executor::task]
-async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, Framebuffer320x120>) {
+async fn draw_task(
+    mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, Framebuffer320x120>,
+    mut dma_ch: Peri<'static, DMA_CH1>,
+) {
     let start_time = Instant::now();
     let mut half_frames = 0;
     let mut last_time = 0.0;
@@ -165,8 +170,21 @@ async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, F
         half_frames += 1;
 
         let framebuffer = sender.send().await;
-        let mut framebuffer = framebuffer.translated(-offset);
-        render(&mut framebuffer, &state).unwrap();
+
+        static ZERO: u8 = 0;
+        let ptr = framebuffer.data_mut();
+        unsafe {
+            dma::read(
+                dma_ch.reborrow(),
+                core::ptr::addr_of!(ZERO),
+                core::ptr::addr_of_mut!(*ptr),
+                TreqSel::PERMANENT,
+            )
+            .await;
+        }
+
+        let mut framebuffer_translated = framebuffer.translated(-offset);
+        render(&mut framebuffer_translated, &state).unwrap();
         sender.send_done();
     }
 }

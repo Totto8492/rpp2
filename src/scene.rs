@@ -114,14 +114,20 @@ pub(crate) fn process<const N: usize>(elapsed: f32, delta: f32, state: &mut Rend
         * Mat4::from_rotation_z(elapsed * 0.5);
     let mvp_cube = projection * view * model_cube;
     queue_mesh(&CUBE, &mvp_cube, state);
+
+    // CUBE2
+    let model_cube2 = Mat4::from_scale(Vec3::new(0.3, 0.3, 0.3))
+        * Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0))
+        * Mat4::from_rotation_y(elapsed * 2.0)
+        * Mat4::from_rotation_z(elapsed * 0.5);
+    let mvp_cube2 = projection * view * model_cube2;
+    queue_mesh(&CUBE, &mvp_cube2, state);
 }
 
 pub(crate) fn render<D: DrawTarget<Color = Bgr565>, const N: usize>(
     framebuffer: &mut D,
     state: &RenderState<N>,
 ) -> Result<(), D::Error> {
-    framebuffer.clear(Bgr565::BLACK)?;
-
     for queue in &state.queue {
         let poly = Triangle::new(queue.polygon.0, queue.polygon.1, queue.polygon.2)
             .into_styled(PrimitiveStyle::with_fill(queue.color));
