@@ -73,8 +73,8 @@ fn main() -> ! {
 
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        unwrap!(spawner.spawn(draw_task(sender)));
-        unwrap!(spawner.spawn(display_task(receiver, reset, dc, spi)));
+        spawner.must_spawn(draw_task(sender));
+        spawner.must_spawn(display_task(receiver, reset, dc, spi));
     });
 }
 
@@ -129,18 +129,16 @@ async fn display_task(
     }
 
     dc.set_low();
-    spi.write(&[0x2c])
-        .await
-        .inspect_err(|e| error!("Failed to write command 0x2c: {:?}", e))
-        .ok();
+    if let Err(e) = spi.write(&[0x2c]).await {
+        error!("Failed to write command 0x2c: {:?}", e);
+    }
     dc.set_high();
 
     loop {
         let framebuffer = receiver.receive().await;
-        spi.write(framebuffer.data())
-            .await
-            .inspect_err(|e| error!("Failed to write framebuffer data: {:?}", e))
-            .ok();
+        if let Err(e) = spi.write(framebuffer.data()).await {
+            error!("Failed to write framebuffer data: {:?}", e);
+        }
         receiver.receive_done();
     }
 }
@@ -150,7 +148,7 @@ async fn draw_task(mut sender: zerocopy_channel::Sender<'static, NoopRawMutex, F
     let start_time = Instant::now();
     let mut half_frames = 0;
     let mut last_time = 0.0;
-    let mut state = RenderState::default();
+    let mut state = RenderState::<256>::default();
     loop {
         if half_frames % 2 == 0 {
             let elapsed = (start_time.elapsed().as_micros() as f64 / 1_000_000.0) as f32;

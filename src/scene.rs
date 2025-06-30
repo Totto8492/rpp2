@@ -13,8 +13,8 @@ use glam::{Mat4, Vec3};
 use num_traits::cast;
 
 pub(crate) struct Mesh {
-    pub(crate) vertex_buffer: &'static [Vec3],
-    pub(crate) index_buffer: &'static [(usize, usize, usize, Bgr565)],
+    vertex_buffer: &'static [Vec3],
+    index_buffer: &'static [(usize, usize, usize, Bgr565)],
 }
 
 #[derive(Debug)]
@@ -24,14 +24,14 @@ struct RenderQueue {
 }
 
 #[derive(Default)]
-pub(crate) struct RenderState {
+pub(crate) struct RenderState<const N: usize> {
     fps: u32,
     polygon_count: u32,
     culling_count: u32,
-    queue: heapless::Vec<RenderQueue, 16>,
+    queue: heapless::Vec<RenderQueue, N>,
 }
 
-pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
+pub(crate) fn process<const N: usize>(elapsed: f32, delta: f32, state: &mut RenderState<N>) {
     state.queue.clear();
     state.polygon_count = 0;
     state.culling_count = 0;
@@ -116,9 +116,9 @@ pub(crate) fn process(elapsed: f32, delta: f32, state: &mut RenderState) {
     queue_mesh(&CUBE, &mvp_cube, state);
 }
 
-pub(crate) fn render<D: DrawTarget<Color = Bgr565>>(
+pub(crate) fn render<D: DrawTarget<Color = Bgr565>, const N: usize>(
     framebuffer: &mut D,
-    state: &RenderState,
+    state: &RenderState<N>,
 ) -> Result<(), D::Error> {
     framebuffer.clear(Bgr565::BLACK)?;
 
@@ -203,7 +203,7 @@ fn render_text<D: DrawTarget<Color = Bgr565>>(
     Ok(())
 }
 
-fn queue_mesh(mesh: &Mesh, mvp: &Mat4, state: &mut RenderState) {
+fn queue_mesh<const N: usize>(mesh: &Mesh, mvp: &Mat4, state: &mut RenderState<N>) {
     for v in mesh.index_buffer {
         state.polygon_count += 1;
         let a = mvp.project_point3(mesh.vertex_buffer[v.0]);
