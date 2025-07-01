@@ -75,8 +75,8 @@ fn main() -> ! {
     let channel_b = CHANNEL_B.init(zerocopy_channel::Channel::new(buf_b));
     let (sender_b, receiver_b) = channel_b.split();
 
-    static DO_RENDER_A: Channel<CriticalSectionRawMutex, (), 2> = Channel::new();
-    static DO_RENDER_B: Channel<CriticalSectionRawMutex, (), 2> = Channel::new();
+    static DO_RENDER_A: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
+    static DO_RENDER_B: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
 
     static STATE: StaticCell<RenderStateRwLock> = StaticCell::new();
     let state = STATE.init(RwLock::new(RenderState::default()));
@@ -102,8 +102,8 @@ fn main() -> ! {
 
 #[embassy_executor::task]
 async fn process_task(
-    channel_a: &'static Channel<CriticalSectionRawMutex, (), 2>,
-    channel_b: &'static Channel<CriticalSectionRawMutex, (), 2>,
+    channel_a: &'static Channel<CriticalSectionRawMutex, (), 1>,
+    channel_b: &'static Channel<CriticalSectionRawMutex, (), 1>,
     state: &'static RenderStateRwLock,
 ) {
     let start_time = Instant::now();
@@ -130,7 +130,7 @@ async fn process_task(
 
 #[embassy_executor::task]
 async fn render_task_a(
-    channel: &'static Channel<CriticalSectionRawMutex, (), 2>,
+    channel: &'static Channel<CriticalSectionRawMutex, (), 1>,
     mut sender: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, Framebuffer320x120>,
     mut dma_ch: Peri<'static, DMA_CH1>,
     state: &'static RenderStateRwLock,
@@ -139,8 +139,8 @@ async fn render_task_a(
         channel.receive().await;
         let framebuffer = sender.send().await;
 
-        static ZERO: u8 = 0;
-        let ptr = framebuffer.data_mut();
+        static ZERO: u32 = 0;
+        let ptr = bytemuck::cast_slice_mut(framebuffer.data_mut());
         unsafe {
             dma::read(
                 dma_ch.reborrow(),
@@ -162,7 +162,7 @@ async fn render_task_a(
 
 #[embassy_executor::task]
 async fn render_task_b(
-    channel: &'static Channel<CriticalSectionRawMutex, (), 2>,
+    channel: &'static Channel<CriticalSectionRawMutex, (), 1>,
     mut sender: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, Framebuffer320x120>,
     mut dma_ch: Peri<'static, DMA_CH2>,
     state: &'static RenderStateRwLock,
@@ -171,8 +171,8 @@ async fn render_task_b(
         channel.receive().await;
         let framebuffer = sender.send().await;
 
-        static ZERO: u8 = 0;
-        let ptr = framebuffer.data_mut();
+        static ZERO: u32 = 0;
+        let ptr = bytemuck::cast_slice_mut(framebuffer.data_mut());
         unsafe {
             dma::read(
                 dma_ch.reborrow(),
