@@ -25,22 +25,16 @@ struct RenderQueue {
 
 #[derive(Default)]
 pub(crate) struct RenderState<const N: usize> {
-    fps: u32,
+    pub(crate) fps: u32,
     polygon_count: u32,
     culling_count: u32,
     queue: heapless::Vec<RenderQueue, N>,
 }
 
-pub(crate) fn process<const N: usize>(elapsed: f32, delta: f32, state: &mut RenderState<N>) {
+pub(crate) fn process<const N: usize>(elapsed: f32, state: &mut RenderState<N>) {
     state.queue.clear();
     state.polygon_count = 0;
     state.culling_count = 0;
-
-    state.fps = if delta < 0.001 {
-        1000
-    } else {
-        (1.0 / delta) as u32
-    };
 
     const PYRAMID: Mesh = Mesh {
         vertex_buffer: &[
@@ -116,8 +110,8 @@ pub(crate) fn process<const N: usize>(elapsed: f32, delta: f32, state: &mut Rend
     queue_mesh(&CUBE, &mvp_cube, state);
 
     // CUBE2
-    let model_cube2 = Mat4::from_scale(Vec3::new(0.3, 0.3, 0.3))
-        * Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0))
+    let model_cube2 = Mat4::from_scale(Vec3::new(0.5, 0.5, 0.5))
+        * Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
         * Mat4::from_rotation_y(elapsed * 2.0)
         * Mat4::from_rotation_z(elapsed * 0.5);
     let mvp_cube2 = projection * view * model_cube2;
