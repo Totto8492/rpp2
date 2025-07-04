@@ -1,53 +1,49 @@
 #![no_std]
 #![no_main]
 
-use defmt::*;
 use embassy_executor::Executor;
-use embassy_rp::clocks::{self, ClockConfig, CoreVoltage};
-use embassy_rp::config::Config;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::pac::dma::vals::TreqSel;
-use embassy_rp::peripherals::{DMA_CH1, DMA_CH2, SPI0};
-use embassy_rp::spi::{self, Phase, Polarity, Spi};
-use embassy_rp::{Peri, dma};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
-use embassy_sync::rwlock::RwLock;
-use embassy_sync::zerocopy_channel;
+use embassy_rp::{
+    clocks::{self, ClockConfig, CoreVoltage}, config::Config, dma, gpio::{Level, Output}, multicore::{spawn_core1, Stack}, pac::dma::vals::TreqSel, peripherals::{DMA_CH1, DMA_CH2, SPI0}, spi::{self, Phase, Polarity, Spi}, Peri
+};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, zerocopy_channel};
 use embassy_time::{Duration, Instant, Timer};
-use embedded_graphics::framebuffer::{Framebuffer, buffer_size};
-use embedded_graphics::pixelcolor::Bgr565;
-use embedded_graphics::pixelcolor::raw::{BigEndian, RawU16};
-use embedded_graphics::prelude::{DrawTargetExt, Point};
+use embedded_graphics::prelude::*;
+use embedded_graphics::{
+    framebuffer::{Framebuffer, buffer_size},
+    pixelcolor::{
+        Bgr565,
+        raw::{BigEndian, RawU16},
+    },
+};
+use panic_rtt_target as _;
+use rtt_target::{rprintln, rtt_init_print};
 use static_cell::StaticCell;
 
-mod scene;
-use scene::{RenderState, process, render};
+use crate::scene::RenderState;
 
-use {defmt_rtt as _, panic_probe as _};
+mod scene;
+
+type FramebufferType =
+    Framebuffer<Bgr565, RawU16, BigEndian, 320, 120, { buffer_size::<Bgr565>(320, 120) }>;
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
-type Framebuffer320x120 =
-    Framebuffer<Bgr565, RawU16, BigEndian, 320, 120, { buffer_size::<Bgr565>(320, 120) }>;
-
-type RenderStateRwLock = RwLock<CriticalSectionRawMutex, RenderState<256>>;
-
 #[cortex_m_rt::entry]
 fn main() -> ! {
+    rtt_init_print!();
+
     let mut config = Config::new(ClockConfig::system_freq(300_000_000).unwrap());
     config.clocks.core_voltage = CoreVoltage::V1_30;
 
     let p = embassy_rp::init(config);
 
     let sys_freq = clocks::clk_sys_freq();
-    info!("System clock frequency: {} MHz", sys_freq / 1_000_000);
+    rprintln!("System clock frequency: {} MHz", sys_freq / 1_000_000);
 
     let core_voltage = clocks::core_voltage().unwrap();
-    info!("Core voltage: {}", core_voltage);
+    rprintln!("Core voltage: {:?}", core_voltage);
 
     let _ = Output::new(p.PIN_23, Level::High);
 
@@ -59,27 +55,37 @@ fn main() -> ! {
     spi_config.frequency = 75_000_000;
     let spi = Spi::new_txonly(p.SPI0, p.PIN_6, p.PIN_3, p.DMA_CH0, spi_config);
 
-    static BUF_A: StaticCell<[Framebuffer320x120; 2]> = StaticCell::new();
-    let buf_a = BUF_A.init([Framebuffer320x120::new(), Framebuffer320x120::new()]);
-    static CHANNEL_A: StaticCell<
-        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, Framebuffer320x120>,
+    static BUFFER_A: StaticCell<[FramebufferType; 2]> = StaticCell::new();
+    let buffer_a = BUFFER_A.init([FramebufferType::new(), FramebufferType::new()]);
+    static FRAMEBUFFER_A: StaticCell<
+        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, FramebufferType>,
     > = StaticCell::new();
-    let channel_a = CHANNEL_A.init(zerocopy_channel::Channel::new(buf_a));
-    let (sender_a, receiver_a) = channel_a.split();
+    let framebuffer_a = FRAMEBUFFER_A.init(zerocopy_channel::Channel::new(buffer_a));
+    let (framebuffer_a_sender, framebuffer_a_receiver) = framebuffer_a.split();
 
-    static BUF_B: StaticCell<[Framebuffer320x120; 2]> = StaticCell::new();
-    let buf_b = BUF_B.init([Framebuffer320x120::new(), Framebuffer320x120::new()]);
-    static CHANNEL_B: StaticCell<
-        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, Framebuffer320x120>,
+    static BUFFER_B: StaticCell<[FramebufferType; 2]> = StaticCell::new();
+    let buffer_b = BUFFER_B.init([FramebufferType::new(), FramebufferType::new()]);
+    static FRAMEBUFFER_B: StaticCell<
+        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, FramebufferType>,
     > = StaticCell::new();
-    let channel_b = CHANNEL_B.init(zerocopy_channel::Channel::new(buf_b));
-    let (sender_b, receiver_b) = channel_b.split();
+    let framebuffer_b = FRAMEBUFFER_B.init(zerocopy_channel::Channel::new(buffer_b));
+    let (framebuffer_b_sender, framebuffer_b_receiver) = framebuffer_b.split();
 
-    static DO_RENDER_A: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
-    static DO_RENDER_B: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
+    static STATE_A: StaticCell<[RenderState<256>; 2]> = StaticCell::new();
+    let state_a = STATE_A.init([RenderState::<256>::default(), RenderState::<256>::default()]);
+    static STATE_A_CHANNEL: StaticCell<
+        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, RenderState<256>>,
+    > = StaticCell::new();
+    let state_a_channel = STATE_A_CHANNEL.init(zerocopy_channel::Channel::new(state_a));
+    let (state_a_sender, state_a_receiver) = state_a_channel.split();
 
-    static STATE: StaticCell<RenderStateRwLock> = StaticCell::new();
-    let state = STATE.init(RwLock::new(RenderState::default()));
+    static STATE_B: StaticCell<[RenderState<256>; 2]> = StaticCell::new();
+    let state_b = STATE_B.init([RenderState::<256>::default(), RenderState::<256>::default()]);
+    static STATE_B_CHANNEL: StaticCell<
+        zerocopy_channel::Channel<'_, CriticalSectionRawMutex, RenderState<256>>,
+    > = StaticCell::new();
+    let state_b_channel = STATE_B_CHANNEL.init(zerocopy_channel::Channel::new(state_b));
+    let (state_b_sender, state_b_receiver) = state_b_channel.split();
 
     spawn_core1(
         p.CORE1,
@@ -87,110 +93,38 @@ fn main() -> ! {
         || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                spawner.must_spawn(render_task_b(&DO_RENDER_B, sender_b, p.DMA_CH2, state));
+                spawner.must_spawn(core1_task());
+                spawner.must_spawn(core1_render_task(state_b_receiver, framebuffer_b_sender, p.DMA_CH2));
             });
         },
     );
 
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        spawner.must_spawn(process_task(&DO_RENDER_A, &DO_RENDER_B, state));
-        spawner.must_spawn(render_task_a(&DO_RENDER_A, sender_a, p.DMA_CH1, state));
-        spawner.must_spawn(display_task(receiver_a, receiver_b, reset, dc, spi));
+        spawner.must_spawn(core0_task());
+        spawner.must_spawn(display_task(
+            framebuffer_a_receiver,
+            framebuffer_b_receiver,
+            reset,
+            dc,
+            spi,
+        ));
+        spawner.must_spawn(process_task(state_a_sender, state_b_sender));
+        spawner.must_spawn(core0_render_task(state_a_receiver, framebuffer_a_sender, p.DMA_CH1));
     });
 }
 
 #[embassy_executor::task]
-async fn process_task(
-    channel_a: &'static Channel<CriticalSectionRawMutex, (), 1>,
-    channel_b: &'static Channel<CriticalSectionRawMutex, (), 1>,
-    state: &'static RenderStateRwLock,
-) {
-    let start_time = Instant::now();
-    let mut next_watch = start_time + Duration::from_secs(1);
-    let mut frame_count = 0;
+async fn core0_task() {
     loop {
-        let elapsed = (start_time.elapsed().as_micros() as f64 / 1_000_000.0) as f32;
-
-        {
-            let mut rw = state.write().await;
-            process(elapsed, &mut rw);
-            frame_count += 1;
-            if next_watch < Instant::now() {
-                next_watch += Duration::from_secs(1);
-                rw.fps = frame_count;
-                frame_count = 0;
-            }
-        }
-
-        channel_a.send(()).await;
-        channel_b.send(()).await;
+        Timer::after_secs(1).await;
     }
 }
 
 #[embassy_executor::task]
-async fn render_task_a(
-    channel: &'static Channel<CriticalSectionRawMutex, (), 1>,
-    mut sender: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, Framebuffer320x120>,
-    mut dma_ch: Peri<'static, DMA_CH1>,
-    state: &'static RenderStateRwLock,
-) {
+async fn core1_task() {
     loop {
-        channel.receive().await;
-        let framebuffer = sender.send().await;
-
-        static ZERO: u32 = 0;
-        let ptr = bytemuck::cast_slice_mut(framebuffer.data_mut());
-        unsafe {
-            dma::read(
-                dma_ch.reborrow(),
-                core::ptr::addr_of!(ZERO),
-                core::ptr::addr_of_mut!(*ptr),
-                TreqSel::PERMANENT,
-            )
-            .await;
-        }
-
-        {
-            let rw = state.read().await;
-            render(framebuffer, &rw).unwrap();
-        }
-
-        sender.send_done();
-    }
-}
-
-#[embassy_executor::task]
-async fn render_task_b(
-    channel: &'static Channel<CriticalSectionRawMutex, (), 1>,
-    mut sender: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, Framebuffer320x120>,
-    mut dma_ch: Peri<'static, DMA_CH2>,
-    state: &'static RenderStateRwLock,
-) {
-    loop {
-        channel.receive().await;
-        let framebuffer = sender.send().await;
-
-        static ZERO: u32 = 0;
-        let ptr = bytemuck::cast_slice_mut(framebuffer.data_mut());
-        unsafe {
-            dma::read(
-                dma_ch.reborrow(),
-                core::ptr::addr_of!(ZERO),
-                core::ptr::addr_of_mut!(*ptr),
-                TreqSel::PERMANENT,
-            )
-            .await;
-        }
-
-        let mut framebuffer = framebuffer.translated(Point::new(0, -120));
-
-        {
-            let rw = state.read().await;
-            render(&mut framebuffer, &rw).unwrap();
-        }
-
-        sender.send_done();
+        Timer::after_secs(1).await;
     }
 }
 
@@ -234,42 +168,141 @@ async fn init_display(
 
 #[embassy_executor::task]
 async fn display_task(
-    mut receiver_a: zerocopy_channel::Receiver<
+    mut framebuffer_a: zerocopy_channel::Receiver<
         'static,
         CriticalSectionRawMutex,
-        Framebuffer320x120,
+        FramebufferType,
     >,
-    mut receiver_b: zerocopy_channel::Receiver<
+    mut framebuffer_b: zerocopy_channel::Receiver<
         'static,
         CriticalSectionRawMutex,
-        Framebuffer320x120,
+        FramebufferType,
     >,
     mut reset: Output<'static>,
     mut dc: Output<'static>,
     mut spi: Spi<'static, SPI0, spi::Async>,
 ) {
     if let Err(e) = init_display(&mut reset, &mut dc, &mut spi).await {
-        error!("Display initialization error: {:?}", e);
+        rprintln!("Display initialization error: {:?}", e);
         return;
     }
 
     dc.set_low();
     if let Err(e) = spi.write(&[0x2c]).await {
-        error!("Failed to write command 0x2c: {:?}", e);
+        rprintln!("Failed to write command 0x2c: {:?}", e);
     }
     dc.set_high();
 
     loop {
-        let framebuffer = receiver_a.receive().await;
-        if let Err(e) = spi.write(framebuffer.data()).await {
-            error!("Failed to write framebuffer data: {:?}", e);
-        }
-        receiver_a.receive_done();
+        let buffer = framebuffer_a.receive().await;
+        spi.write(buffer.data()).await.unwrap();
+        framebuffer_a.receive_done();
 
-        let framebuffer = receiver_b.receive().await;
-        if let Err(e) = spi.write(framebuffer.data()).await {
-            error!("Failed to write framebuffer data: {:?}", e);
+        let buffer = framebuffer_b.receive().await;
+        spi.write(buffer.data()).await.unwrap();
+        framebuffer_b.receive_done();
+    }
+}
+
+#[embassy_executor::task]
+async fn process_task(
+    mut state_a_sender: zerocopy_channel::Sender<
+        'static,
+        CriticalSectionRawMutex,
+        RenderState<256>,
+    >,
+    mut state_b_sender: zerocopy_channel::Sender<
+        'static,
+        CriticalSectionRawMutex,
+        RenderState<256>,
+    >,
+) {
+    let start_time = Instant::now();
+    let mut next_watch = start_time + Duration::from_secs(1);
+    let mut frame_count = 0;
+    let mut fps = 0;
+    loop {
+        let elapsed = (start_time.elapsed().as_micros() as f64 / 1_000_000.0) as f32;
+
+        let state_a = state_a_sender.send().await;
+        let state_b = state_b_sender.send().await;
+        scene::process(elapsed, state_a);
+
+        frame_count += 1;
+        if next_watch < Instant::now() {
+            next_watch += Duration::from_secs(1);
+            fps = frame_count;
+            frame_count = 0;
         }
-        receiver_b.receive_done();
+        state_a.fps = fps;
+
+        state_b.clone_from(state_a);
+        state_b_sender.send_done();
+        state_a_sender.send_done();
+    }
+}
+
+#[embassy_executor::task]
+async fn core0_render_task(
+    mut state_receiver: zerocopy_channel::Receiver<
+        'static,
+        CriticalSectionRawMutex,
+        RenderState<256>,
+    >,
+    mut framebuffer: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, FramebufferType>,
+    mut dma_ch: Peri<'static, DMA_CH1>
+) {
+    loop {
+        let buffer = framebuffer.send().await;
+
+        static ZERO: u16 = 0;
+        let ptr = bytemuck::cast_slice_mut(buffer.data_mut());
+        unsafe {
+            dma::read(
+                dma_ch.reborrow(),
+                core::ptr::addr_of!(ZERO),
+                core::ptr::addr_of_mut!(*ptr),
+                TreqSel::PERMANENT,
+            )
+            .await;
+        }
+
+        let state = state_receiver.receive().await;
+        scene::render(buffer, state).unwrap();
+        state_receiver.receive_done();
+        framebuffer.send_done();
+    }
+}
+
+#[embassy_executor::task]
+async fn core1_render_task(
+    mut state_receiver: zerocopy_channel::Receiver<
+        'static,
+        CriticalSectionRawMutex,
+        RenderState<256>,
+    >,
+    mut framebuffer: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, FramebufferType>,
+    mut dma_ch: Peri<'static, DMA_CH2>
+) {
+    loop {
+        let buffer = framebuffer.send().await;
+        
+        static ZERO: u16 = 0;
+        let ptr = bytemuck::cast_slice_mut(buffer.data_mut());
+        unsafe {
+            dma::read(
+                dma_ch.reborrow(),
+                core::ptr::addr_of!(ZERO),
+                core::ptr::addr_of_mut!(*ptr),
+                TreqSel::PERMANENT,
+            )
+            .await;
+        }
+
+        let state = state_receiver.receive().await;
+        let buffer = &mut buffer.translated(Point::new(0, -120));
+        scene::render(buffer, state).unwrap();
+        state_receiver.receive_done();
+        framebuffer.send_done();
     }
 }

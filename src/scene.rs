@@ -110,8 +110,7 @@ pub(crate) fn process<const N: usize>(elapsed: f32, state: &mut RenderState<N>) 
     queue_mesh(&CUBE, &mvp_cube, state);
 
     // CUBE2
-    let model_cube2 = Mat4::from_scale(Vec3::new(0.5, 0.5, 0.5))
-        * Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
+    let model_cube2 = Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
         * Mat4::from_rotation_y(elapsed * 2.0)
         * Mat4::from_rotation_z(elapsed * 0.5);
     let mvp_cube2 = projection * view * model_cube2;
