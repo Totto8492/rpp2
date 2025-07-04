@@ -17,13 +17,13 @@ pub(crate) struct Mesh {
     index_buffer: &'static [(usize, usize, usize, Bgr565)],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct RenderQueue {
     polygon: (Point, Point, Point),
     color: Bgr565,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct RenderState<const N: usize> {
     pub(crate) fps: u32,
     polygon_count: u32,
