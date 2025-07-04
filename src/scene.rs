@@ -87,7 +87,7 @@ pub(crate) fn process<const N: usize>(elapsed: f32, state: &mut RenderState<N>) 
         ],
     };
 
-    let view = Mat4::look_at_rh(Vec3::new(0.0, 3.0, -5.0), Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
+    let view = Mat4::look_at_rh(Vec3::new(0.0, 3.0, 5.0), Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
     let projection = Mat4::perspective_rh(
         PI / (libm::sinf(elapsed * 5.0).abs() * 1.2 + 5.0),
         4.0 / 3.0,
@@ -96,7 +96,14 @@ pub(crate) fn process<const N: usize>(elapsed: f32, state: &mut RenderState<N>) 
     );
 
     // PYRAMID
-    let model_pyramid = Mat4::from_translation(Vec3::new(-1.0, 0.0, 0.0))
+    let model_pyramid = Mat4::from_translation(Vec3::new(-1.0, -0.5, 0.0))
+        * Mat4::from_rotation_x(elapsed)
+        * Mat4::from_rotation_y(elapsed * 3.0);
+    let mvp_pyramid = projection * view * model_pyramid;
+    queue_mesh(&PYRAMID, &mvp_pyramid, state);
+
+    // PYRAMID2
+    let model_pyramid = Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0))
         * Mat4::from_rotation_x(elapsed)
         * Mat4::from_rotation_y(elapsed * 3.0);
     let mvp_pyramid = projection * view * model_pyramid;
@@ -111,6 +118,13 @@ pub(crate) fn process<const N: usize>(elapsed: f32, state: &mut RenderState<N>) 
 
     // CUBE2
     let model_cube2 = Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
+        * Mat4::from_rotation_y(elapsed * 2.0)
+        * Mat4::from_rotation_z(elapsed * 0.5);
+    let mvp_cube2 = projection * view * model_cube2;
+    queue_mesh(&CUBE, &mvp_cube2, state);
+
+    // CUBE3
+    let model_cube2 = Mat4::from_translation(Vec3::new(-1.0, 1.0, 0.0))
         * Mat4::from_rotation_y(elapsed * 2.0)
         * Mat4::from_rotation_z(elapsed * 0.5);
     let mvp_cube2 = projection * view * model_cube2;
