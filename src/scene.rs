@@ -211,8 +211,16 @@ fn render_text<D: DrawTarget<Color = Bgr565>>(
     } else {
         write!(&mut s, "{label}").unwrap();
     }
+
+    let mut shadow_style = style;
+    shadow_style.text_color = Some(Bgr565::CSS_DARK_GRAY);
+
+    let text_shadow = Text::with_baseline(&s, pos + Point::new(1, 1), shadow_style, Baseline::Top);
+    text_shadow.draw(framebuffer)?;
+
     let text_label = Text::with_baseline(&s, pos, style, Baseline::Top);
     text_label.draw(framebuffer)?;
+
     Ok(())
 }
 
