@@ -3,6 +3,3 @@ runner = "probe-rs run --chip RP235x --speed 20000"
 
 [build]
 target = "thumbv8m.main-none-eabihf"
-
-[env]
-DEFMT_LOG = "debug"
