@@ -3,7 +3,15 @@
 
 use embassy_executor::Executor;
 use embassy_rp::{
-    clocks::{self, ClockConfig, CoreVoltage}, config::Config, dma, gpio::{Level, Output}, multicore::{spawn_core1, Stack}, pac::dma::vals::TreqSel, peripherals::{DMA_CH1, DMA_CH2, SPI0}, spi::{self, Phase, Polarity, Spi}, Peri
+    Peri,
+    clocks::{self, ClockConfig, CoreVoltage},
+    config::Config,
+    dma,
+    gpio::{Level, Output},
+    multicore::{Stack, spawn_core1},
+    pac::dma::vals::TreqSel,
+    peripherals::{DMA_CH1, DMA_CH2, SPI0},
+    spi::{self, Phase, Polarity, Spi},
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, zerocopy_channel};
 use embassy_time::{Duration, Instant, Timer};
@@ -19,9 +27,8 @@ use panic_rtt_target as _;
 use rtt_target::{rprintln, rtt_init_print};
 use static_cell::StaticCell;
 
-use crate::scene::RenderState;
-
 mod scene;
+use scene::RenderState;
 
 type FramebufferType =
     Framebuffer<Bgr565, RawU16, BigEndian, 320, 120, { buffer_size::<Bgr565>(320, 120) }>;
@@ -94,7 +101,11 @@ fn main() -> ! {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
                 spawner.must_spawn(core1_task());
-                spawner.must_spawn(core1_render_task(state_b_receiver, framebuffer_b_sender, p.DMA_CH2));
+                spawner.must_spawn(core1_render_task(
+                    state_b_receiver,
+                    framebuffer_b_sender,
+                    p.DMA_CH2,
+                ));
             });
         },
     );
@@ -110,7 +121,11 @@ fn main() -> ! {
             spi,
         ));
         spawner.must_spawn(process_task(state_a_sender, state_b_sender));
-        spawner.must_spawn(core0_render_task(state_a_receiver, framebuffer_a_sender, p.DMA_CH1));
+        spawner.must_spawn(core0_render_task(
+            state_a_receiver,
+            framebuffer_a_sender,
+            p.DMA_CH1,
+        ));
     });
 }
 
@@ -250,7 +265,7 @@ async fn core0_render_task(
         RenderState<256>,
     >,
     mut framebuffer: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, FramebufferType>,
-    mut dma_ch: Peri<'static, DMA_CH1>
+    mut dma_ch: Peri<'static, DMA_CH1>,
 ) {
     loop {
         let buffer = framebuffer.send().await;
@@ -282,11 +297,11 @@ async fn core1_render_task(
         RenderState<256>,
     >,
     mut framebuffer: zerocopy_channel::Sender<'static, CriticalSectionRawMutex, FramebufferType>,
-    mut dma_ch: Peri<'static, DMA_CH2>
+    mut dma_ch: Peri<'static, DMA_CH2>,
 ) {
     loop {
         let buffer = framebuffer.send().await;
-        
+
         static ZERO: u16 = 0;
         let ptr = bytemuck::cast_slice_mut(buffer.data_mut());
         unsafe {
