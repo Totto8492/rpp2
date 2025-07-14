@@ -9,7 +9,7 @@ use embassy_rp::{
     dma,
     gpio::{Level, Output},
     multicore::{Stack, spawn_core1},
-    pac::dma::vals::TreqSel,
+    pac::{self, dma::vals::TreqSel},
     peripherals::{DMA_CH1, DMA_CH2, SPI0},
     spi::{self, Phase, Polarity, Spi},
 };
@@ -51,6 +51,8 @@ fn main() -> ! {
 
     let core_voltage = clocks::core_voltage().unwrap();
     rprintln!("Core voltage: {:?}", core_voltage);
+
+    pac::BUSCTRL.bus_priority().modify(|w| w.set_proc0(true));
 
     let _ = Output::new(p.PIN_23, Level::High);
 
